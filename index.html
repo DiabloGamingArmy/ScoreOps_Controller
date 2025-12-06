@@ -354,18 +354,8 @@
         
         // --- STAGING LOGIC FIX: Centralized Score Staging Function ---
         function stageScoreUpdate(team, points, label) {
-            if (team === 'A') CP.localState.scoreA = Math.max(0, CP.localState.scoreA + points);
-            else CP.localState.scoreB = Math.max(0, CP.localState.scoreB + points);
-
-            const teamName = team === 'A' ? CP.localState.teamAName : CP.localState.teamBName;
-            const scoreDelta = Math.abs(points);
-
-            const logText = points > 0 
-                ? `${teamName} scored ${scoreDelta} (${label}). Staged.`
-                : `${teamName} score corrected by ${scoreDelta} point(s). Staged.`;
-                
-            updateControlPanelUI(); 
-            showToast(`Score update staged: ${logText}`);
+            if (typeof ActionPipeline === 'undefined') return;
+            ActionPipeline.stageAction({ kind: 'score', targetTeam: team, amount: points, label, meta: { source: 'manual' } });
         }
 
         // --- INITIALIZATION ---
@@ -748,7 +738,7 @@
                     const team = btn.dataset.scoreTeam;
                     const points = parseInt(btn.dataset.scorePoints, 10);
                     const label = btn.dataset.scoreLabel;
-                    stageScoreUpdate(team, points, label); 
+                    ActionPipeline.stageAction({ kind: 'score', targetTeam: team, amount: points, label, meta: { source: 'manual' } });
                 }
             });
 
@@ -758,21 +748,25 @@
             // NEW: Reset Color Logic
             resetColorABtn.addEventListener('click', () => {
                 playAudioCue('click');
+                const actions = [
+                    { kind: 'field', key: 'teamAColor1', value: DEFAULT_COLORS.teamA.start, label: 'Team A Color 1' },
+                    { kind: 'field', key: 'teamAColor2', value: DEFAULT_COLORS.teamA.end, label: 'Team A Color 2' }
+                ];
+                ActionPipeline.stageActions(actions.map(a => ({ ...a, meta: { source: 'manual', silent: true } })));
                 document.getElementById('cp-team-a-color-1').value = DEFAULT_COLORS.teamA.start;
                 document.getElementById('cp-team-a-color-2').value = DEFAULT_COLORS.teamA.end;
-                CP.localState.teamAColor1 = DEFAULT_COLORS.teamA.start;
-                CP.localState.teamAColor2 = DEFAULT_COLORS.teamA.end;
-                updateControlPanelUI();
                 showToast("Team A Colors Reset (Staged)", false);
             });
             
             resetColorBBtn.addEventListener('click', () => {
                 playAudioCue('click');
+                const actions = [
+                    { kind: 'field', key: 'teamBColor1', value: DEFAULT_COLORS.teamB.start, label: 'Team B Color 1' },
+                    { kind: 'field', key: 'teamBColor2', value: DEFAULT_COLORS.teamB.end, label: 'Team B Color 2' }
+                ];
+                ActionPipeline.stageActions(actions.map(a => ({ ...a, meta: { source: 'manual', silent: true } })));
                 document.getElementById('cp-team-b-color-1').value = DEFAULT_COLORS.teamB.start;
                 document.getElementById('cp-team-b-color-2').value = DEFAULT_COLORS.teamB.end;
-                CP.localState.teamBColor1 = DEFAULT_COLORS.teamB.start;
-                CP.localState.teamBColor2 = DEFAULT_COLORS.teamB.end;
-                updateControlPanelUI();
                 showToast("Team B Colors Reset (Staged)", false);
             });
 
@@ -790,17 +784,18 @@
                 if (!CP.currentTier.allowLogos && (teamALogoInput.value || teamBLogoInput.value)) { showToast("Team Logos are available in Basic, Pro & Enterprise tiers.", true); return; }
 
                 playAudioCue('click');
-                stageFieldChange('teamAName', teamAInput.value.trim() || "Home", 'Team A Name', { silent: true });
-                stageFieldChange('teamBName', teamBInput.value.trim() || "Away", 'Team B Name', { silent: true });
-                stageFieldChange('teamALogo', teamALogoInput.value.trim(), 'Team A Logo', { silent: true });
-                stageFieldChange('teamBLogo', teamBLogoInput.value.trim(), 'Team B Logo', { silent: true });
+                const stagedActions = [
+                    { kind: 'field', key: 'teamAName', value: teamAInput.value.trim() || "Home", label: 'Team A Name' },
+                    { kind: 'field', key: 'teamBName', value: teamBInput.value.trim() || "Away", label: 'Team B Name' },
+                    { kind: 'field', key: 'teamALogo', value: teamALogoInput.value.trim(), label: 'Team A Logo' },
+                    { kind: 'field', key: 'teamBLogo', value: teamBLogoInput.value.trim(), label: 'Team B Logo' },
+                    { kind: 'field', key: 'teamAColor1', value: teamAColor1.value, label: 'Team A Color 1' },
+                    { kind: 'field', key: 'teamAColor2', value: teamAColor2.value, label: 'Team A Color 2' },
+                    { kind: 'field', key: 'teamBColor1', value: teamBColor1.value, label: 'Team B Color 1' },
+                    { kind: 'field', key: 'teamBColor2', value: teamBColor2.value, label: 'Team B Color 2' }
+                ].map(action => ({ ...action, meta: { source: 'manual', silent: true } }));
 
-                stageFieldChange('teamAColor1', teamAColor1.value, 'Team A Color 1', { silent: true });
-                stageFieldChange('teamAColor2', teamAColor2.value, 'Team A Color 2', { silent: true });
-                stageFieldChange('teamBColor1', teamBColor1.value, 'Team B Color 1', { silent: true });
-                stageFieldChange('teamBColor2', teamBColor2.value, 'Team B Color 2', { silent: true });
-
-                updateControlPanelUI();
+                ActionPipeline.stageActions(stagedActions);
                 showToast("Team info & colors staged.", false);
             });
 
@@ -818,17 +813,31 @@
             });
 
             updateClockBtn.addEventListener('click', () => { playAudioCue('click'); const nextClock = clockInput.value.trim() || "00:00"; const nextQuarter = quarterInput.value; CP.localState.clockState = "stopped"; stageFieldChange('clock', nextClock, 'Clock', { silent: true, mode: 'set' }); stageFieldChange('quarter', nextQuarter, 'Quarter', { silent: true }); updateControlPanelUI(); showToast("Clock & Quarter have been staged.", false); });
-            penaltyBtn.addEventListener('click', () => { playAudioCue('click'); const team = penaltyTeam.value; const teamName = team === 'teamA' ? CP.localState.teamAName : CP.localState.teamBName; const desc = penaltyDesc.value.trim() || "Unspecified penalty"; CP.localState.stagedEvents.push({ type: 'penalty', text: `Penalty/Foul on ${teamName}. ${desc}`, data: { team }, collection: 'public' }); penaltyDesc.value = ""; showToast("Penalty staged.", false); updateStagedEventsUI(); });
-            turnoverBtn.addEventListener('click', () => { playAudioCue('click'); const team = turnoverTeam.value; const teamName = team === 'teamA' ? CP.localState.teamAName : CP.localState.teamBName; CP.localState.stagedEvents.push({ type: 'turnover', text: `Turnover! Possession to ${teamName}.`, data: { team }, collection: 'public' }); showToast("Turnover staged.", false); updateStagedEventsUI(); });
-            possTeamABtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('teamA'); });
-            possTeamBBtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('teamB'); });
-            possClearBtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('none'); });
+            penaltyBtn.addEventListener('click', () => {
+                playAudioCue('click');
+                const team = penaltyTeam.value;
+                const teamName = team === 'teamA' ? CP.localState.teamAName : CP.localState.teamBName;
+                const desc = penaltyDesc.value.trim() || "Unspecified penalty";
+                ActionPipeline.stageAction({ kind: 'event', type: 'penalty', text: `Penalty/Foul on ${teamName}. ${desc}`, data: { team }, collection: 'public', meta: { source: 'manual' } });
+                penaltyDesc.value = "";
+                showToast("Penalty staged.", false);
+            });
+            turnoverBtn.addEventListener('click', () => {
+                playAudioCue('click');
+                const team = turnoverTeam.value;
+                const teamName = team === 'teamA' ? CP.localState.teamAName : CP.localState.teamBName;
+                ActionPipeline.stageAction({ kind: 'event', type: 'turnover', text: `Turnover! Possession to ${teamName}.`, data: { team }, collection: 'public', meta: { source: 'manual' } });
+                showToast("Turnover staged.", false);
+            });
+            possTeamABtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('teamA', { source: 'manual' }); });
+            possTeamBBtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('teamB', { source: 'manual' }); });
+            possClearBtn.addEventListener('click', () => { playAudioCue('click'); stagePossessionAction('none', { source: 'manual' }); });
 
-            commentaryPublicBtn.addEventListener('click', () => { if (!CP.currentTier.allowCommentary) { showToast("Public Commentary requires a Basic, Pro or Enterprise license.", true); return; } const text = commentaryInput.value.trim(); if (!text) return; playAudioCue('click'); CP.localState.stagedEvents.push({ type: 'commentary', text: text, data: { operator: CP.operatorName }, collection: 'public' }); commentaryInput.value = ""; showToast("Public commentary staged.", false); updateStagedEventsUI(); });
+            commentaryPublicBtn.addEventListener('click', () => { if (!CP.currentTier.allowCommentary) { showToast("Public Commentary requires a Basic, Pro or Enterprise license.", true); return; } const text = commentaryInput.value.trim(); if (!text) return; playAudioCue('click'); ActionPipeline.stageAction({ kind: 'event', type: 'commentary', text, data: { operator: CP.operatorName }, collection: 'public', meta: { source: 'manual' } }); commentaryInput.value = ""; showToast("Public commentary staged.", false); });
             commentaryOperatorBtn.addEventListener('click', () => { const text = commentaryInput.value.trim(); if (!text) return; playAudioCue('click'); sendEvent("operator_comment", `[OPR] [${CP.operatorName}]: ${text}`, {}, CP.operatorLogCollectionRef); commentaryInput.value = ""; });
             
-            graphicShowBtn.addEventListener('click', () => { const title = graphicTitle.value.trim(); const subtitle = graphicSubtitle.value.trim(); if (!title && !subtitle) { playAudioCue('error'); showToast("Graphic title or subtitle is required.", true); return; } if (!CP.currentTier.allowGraphics) { showToast("On-Screen Graphics are only available in Basic+ tiers.", true); return; } const dur = parseInt(graphicDurationInput.value, 10) || 0; if (dur > 0 && !CP.currentTier.allowAutoHide) { showToast("Auto-Hide duration requires a Pro license. Setting to 0.", true); graphicDurationInput.value = 0; CP.localState.graphicDuration = 0; } else { CP.localState.graphicDuration = dur; } playAudioCue('click'); stageGraphicAction({ operation: 'show', title, subtitle, duration: CP.localState.graphicDuration }); });
-            graphicHideBtn.addEventListener('click', () => { playAudioCue('click'); stageGraphicAction({ operation: 'hide' }); });
+            graphicShowBtn.addEventListener('click', () => { const title = graphicTitle.value.trim(); const subtitle = graphicSubtitle.value.trim(); if (!title && !subtitle) { playAudioCue('error'); showToast("Graphic title or subtitle is required.", true); return; } if (!CP.currentTier.allowGraphics) { showToast("On-Screen Graphics are only available in Basic+ tiers.", true); return; } const dur = parseInt(graphicDurationInput.value, 10) || 0; if (dur > 0 && !CP.currentTier.allowAutoHide) { showToast("Auto-Hide duration requires a Pro license. Setting to 0.", true); graphicDurationInput.value = 0; CP.localState.graphicDuration = 0; } else { CP.localState.graphicDuration = dur; } playAudioCue('click'); stageGraphicAction({ operation: 'show', title, subtitle, duration: CP.localState.graphicDuration }, { source: 'manual' }); });
+            graphicHideBtn.addEventListener('click', () => { playAudioCue('click'); stageGraphicAction({ operation: 'hide' }, { source: 'manual' }); });
 
             resetScoreboardBtn.addEventListener('click', () => { playAudioCue('click'); CP.localState.scoreA = 0; CP.localState.scoreB = 0; updateControlPanelUI(); showToast("Scoreboard reset locally.", false); });
             resetScoreboardGlobalBtn.addEventListener('click', () => { if (CP.settings.confirmGlobalReset) { CP.confirmAction = 'globalReset'; document.getElementById('confirm-modal-text').innerText = "Are you sure you want to reset the GLOBAL scoreboard? This will set all scores to 0 and reset the clock."; confirmModal.classList.remove('hidden'); } else { executeGlobalReset(); } });
@@ -1382,6 +1391,10 @@ function renderMacros() {
 }
 
 function addStagedEvent(type, text, data = {}, collection = 'public') {
+    if (typeof ActionPipeline !== 'undefined') {
+        ActionPipeline.stageAction({ kind: 'event', type, text, data, collection, meta: { source: 'macro' } });
+        return;
+    }
     if (!CP.localState.stagedEvents) CP.localState.stagedEvents = [];
     CP.localState.stagedEvents.push({ type, text, data, collection });
 }
@@ -1389,6 +1402,7 @@ function addStagedEvent(type, text, data = {}, collection = 'public') {
 function applyMacro(macro) {
     playAudioCue('click');
     if (!macro.actions || !Array.isArray(macro.actions)) return;
+    const actionsToStage = [];
     const clockInput = document.getElementById('cp-clock');
     const quarterInput = document.getElementById('cp-quarter');
     const startClockBtn = document.getElementById('cp-start-clock-btn');
@@ -1396,6 +1410,7 @@ function applyMacro(macro) {
     const graphicTitleInput = document.getElementById('cp-graphic-title');
     const graphicSubtitleInput = document.getElementById('cp-graphic-subtitle');
     const graphicDurationInput = document.getElementById('cp-graphic-duration');
+
     macro.actions.forEach((action) => {
         switch (action.type) {
             case 'clock':
@@ -1405,17 +1420,15 @@ function applyMacro(macro) {
                     stopClockBtn?.click();
                 } else if (action.operation === 'set' && action.time) {
                     if (clockInput) clockInput.value = action.time;
-                    stageFieldChange('clock', action.time, 'Clock', { mode: 'set' });
+                    actionsToStage.push({ kind: 'field', key: 'clock', value: action.time, label: 'Clock', meta: { source: 'macro', mode: 'set' } });
                     CP.localState.clockState = 'stopped';
-                    addStagedEvent('clock', `Clock set to ${action.time}`, { value: action.time, stagedField: true }, 'public');
                 }
                 break;
 
             case 'quarter':
                 if (action.value) {
                     if (quarterInput) quarterInput.value = action.value;
-                    stageFieldChange('quarter', action.value, 'Quarter');
-                    addStagedEvent('quarter', `Quarter set to ${action.value}`, { value: action.value, stagedField: true }, 'public');
+                    actionsToStage.push({ kind: 'field', key: 'quarter', value: action.value, label: 'Quarter', meta: { source: 'macro' } });
                 }
                 break;
 
@@ -1425,45 +1438,43 @@ function applyMacro(macro) {
                 const teamName = teamKey === 'A' ? CP.localState.teamAName : CP.localState.teamBName;
                 if (action.operation === 'set') {
                     const targetVal = Math.max(0, Number(action.amount || 0));
-                    const scoreKey = teamKey === 'A' ? 'scoreA' : 'scoreB';
-                    stageFieldChange(scoreKey, targetVal, `${teamName} Score`, { mode: 'set' });
-                    addStagedEvent('score', `${teamName} score set to ${targetVal}`, { team: teamKey, value: targetVal, stagedField: true }, 'public');
+                    actionsToStage.push({ kind: 'score', targetTeam: teamKey, amount: targetVal, label: `${teamName} Score`, meta: { source: 'macro', mode: 'set' } });
                 } else {
                     const deltaRaw = Number(action.amount || 0);
                     const delta = action.operation === 'subtract' ? -Math.abs(deltaRaw) : Math.abs(deltaRaw);
-                    stageScoreUpdate(teamKey, delta, action.label || 'Score');
-                    addStagedEvent('score', `${teamName}: ${delta > 0 ? '+' + delta : delta}`, { team: teamKey, delta, stagedField: true }, 'public');
+                    actionsToStage.push({ kind: 'score', targetTeam: teamKey, amount: delta, label: action.label || 'Score', meta: { source: 'macro' } });
                 }
                 break;
             }
 
-            case 'graphic':
+            case 'graphic': {
+                const duration = (typeof action.duration === 'number') ? action.duration : (parseInt(action.duration, 10) || 0);
                 if (action.operation === 'show') {
                     const title = action.title || '';
                     const subtitle = action.subtitle || '';
-                    const duration = (typeof action.duration === 'number') ? action.duration : (parseInt(action.duration, 10) || 0);
                     if (graphicTitleInput) graphicTitleInput.value = title;
                     if (graphicSubtitleInput) graphicSubtitleInput.value = subtitle;
                     if (graphicDurationInput) graphicDurationInput.value = duration;
-                    stageGraphicAction({ operation: 'show', title, subtitle, duration });
+                    actionsToStage.push({ kind: 'graphic', payload: { operation: 'show', title, subtitle, duration }, meta: { source: 'macro' } });
                 } else if (action.operation === 'hide') {
                     if (graphicTitleInput) graphicTitleInput.value = '';
                     if (graphicSubtitleInput) graphicSubtitleInput.value = '';
                     if (graphicDurationInput) graphicDurationInput.value = '';
-                    stageGraphicAction({ operation: 'hide' });
+                    actionsToStage.push({ kind: 'graphic', payload: { operation: 'hide' }, meta: { source: 'macro' } });
                 }
                 break;
+            }
 
             case 'possession':
-                if (action.value === 'teamA' || action.value === 'teamB' || action.value === 'none') stagePossessionAction(action.value);
+                if (action.value === 'teamA' || action.value === 'teamB' || action.value === 'none') actionsToStage.push({ kind: 'possession', value: action.value, meta: { source: 'macro' } });
                 break;
 
             case 'log':
                 if (action.text) {
                     if (action.logType === 'operator') {
-                        sendEvent(action.logType || 'commentary', action.text, { operator: CP.operatorName }, CP.operatorLogCollectionRef, true);
+                        actionsToStage.push({ kind: 'operatorLog', logType: action.logType || 'commentary', text: action.text, data: { operator: CP.operatorName }, meta: { source: 'macro', immediate: true } });
                     } else {
-                        addStagedEvent(action.logType || 'commentary', action.text, { operator: CP.operatorName }, 'public');
+                        actionsToStage.push({ kind: 'event', type: action.logType || 'commentary', text: action.text, data: { operator: CP.operatorName }, collection: 'public', meta: { source: 'macro' } });
                     }
                 }
                 break;
@@ -1472,9 +1483,8 @@ function applyMacro(macro) {
                 console.warn("Unknown macro action type", action);
         }
     });
-    updateControlPanelUI();
-    renderStagedFieldsUI();
-    updateStagedEventsUI();
+
+    ActionPipeline.stageActions(actionsToStage);
     showToast(`Macro '${macro.label}' executed. Staged changes added.`, false);
 }
 
@@ -2506,49 +2516,114 @@ id="cp-macros-section" class="hidden bg-gray-800/50 p-4 border border-purple-500
             if (typeof updateStagedEventsUI === 'function') updateStagedEventsUI();
         }
 
-        window.stageFieldChange = function(key, newValue, humanLabel, meta = {}){
-            const { silent = false, mode = null, delta = null } = meta || {};
+        function recordStagedField(key, newValue, humanLabel, meta = {}){
+            const { silent = false, mode = null, delta = null, source = 'manual' } = meta || {};
             const prevLive = (CP.globalState && Object.prototype.hasOwnProperty.call(CP.globalState, key)) ? CP.globalState[key] : undefined;
             CP.localState[key] = newValue;
             const stagedList = CP.localState.stagedFields || [];
-            const updatedItem = { key, newValue, prevValue: prevLive, label: humanLabel || key, mode, delta, timestamp: Date.now() };
+            const updatedItem = { key, newValue, prevValue: prevLive, label: humanLabel || key, mode, delta, timestamp: Date.now(), source };
             const existingIdx = stagedList.findIndex((f) => f.key === key);
             if (existingIdx >= 0) stagedList[existingIdx] = updatedItem; else stagedList.push(updatedItem);
             CP.localState.stagedFields = stagedList;
             if (!silent) showToast(`${humanLabel || key} staged.`, false);
-            refreshUI();
-        };
+        }
 
-        window.stageScoreUpdate = function(team, points){
-            const key = (team === 'A' || team === 'Home') ? 'scoreA' : 'scoreB';
-            const prev = Number(CP.localState[key] || 0);
-            const newScore = Math.max(0, prev + Number(points || 0));
-            const teamName = key === 'scoreA' ? (CP.localState.teamAName || 'Home') : (CP.localState.teamBName || 'Away');
-            stageFieldChange(key, newScore, `${teamName} Score`, { mode: 'adjust', delta: Number(points || 0) });
-        };
+        function recordStagedEvent(type, text, data = {}, collection = 'public', meta = {}){
+            const { source = 'manual' } = meta || {};
+            if (!Array.isArray(CP.localState.stagedEvents)) CP.localState.stagedEvents = [];
+            CP.localState.stagedEvents.push({ type, text, data, collection, source, timestamp: Date.now() });
+        }
 
-        window.stageGraphicAction = function({ operation = 'show', title = '', subtitle = '', duration = 0 } = {}){
+        function handleGraphicAction(payload = {}, meta = {}) {
+            const { operation = 'show', title = '', subtitle = '', duration = 0 } = payload || {};
             const safeTitle = title || '';
             const safeSubtitle = subtitle || '';
             if (operation === 'hide') {
                 CP.localState.graphicDuration = 0;
-                stageFieldChange('activeGraphic', null, 'Graphic');
-                addStagedEvent('graphic', 'Graphic Hide', { stagedField: true }, 'public');
+                recordStagedField('activeGraphic', null, 'Graphic', meta);
+                recordStagedEvent('graphic', 'Graphic Hide', { stagedField: true }, 'public', meta);
             } else {
-                const payload = { title: safeTitle, subtitle: safeSubtitle };
+                const payloadValue = { title: safeTitle, subtitle: safeSubtitle };
                 CP.localState.graphicDuration = duration;
-                stageFieldChange('activeGraphic', payload, 'Graphic');
-                addStagedEvent('graphic', `Graphic Show: ${safeTitle || 'Untitled'}`, { title: safeTitle, subtitle: safeSubtitle, duration, stagedField: true }, 'public');
+                recordStagedField('activeGraphic', payloadValue, 'Graphic', meta);
+                recordStagedEvent('graphic', `Graphic Show: ${safeTitle || 'Untitled'}`, { title: safeTitle, subtitle: safeSubtitle, duration, stagedField: true }, 'public', meta);
             }
-            renderStagedFieldsUI();
-            updateStagedEventsUI();
+        }
+
+        function handlePossessionAction(value, meta = {}) {
+            const next = (value === 'teamA' || value === 'teamB') ? value : 'none';
+            recordStagedField('possession', next, 'Possession', meta);
+            const possText = next === 'teamA' ? CP.localState.teamAName : next === 'teamB' ? CP.localState.teamBName : 'None';
+            recordStagedEvent('possession', `Possession: ${possText}`, { team: next, stagedField: true }, 'public', meta);
+        }
+
+        function executeImmediateAction(action){
+            if (action.kind === 'operatorLog') {
+                sendEvent(action.logType || 'operator_comment', action.text || '', action.data || {}, CP.operatorLogCollectionRef, true);
+            }
+        }
+
+        function normalizeAction(raw){
+            if (!raw || typeof raw !== 'object') return { kind: 'unknown', meta: {} };
+            const meta = { ...(raw.meta || {}) };
+            return { ...raw, meta };
+        }
+
+        window.ActionPipeline = {
+            stageAction(rawAction){
+                const action = normalizeAction(rawAction);
+                if (action.meta && action.meta.immediate) {
+                    executeImmediateAction(action);
+                    return;
+                }
+                switch (action.kind) {
+                    case 'field':
+                        recordStagedField(action.key, action.value, action.label, action.meta);
+                        break;
+                    case 'score': {
+                        const teamKey = (action.targetTeam === 'B' || action.targetTeam === 'teamB' || action.targetTeam === 'Away') ? 'scoreB' : 'scoreA';
+                        const teamName = teamKey === 'scoreA' ? (CP.localState.teamAName || 'Home') : (CP.localState.teamBName || 'Away');
+                        const prev = Number(CP.localState[teamKey] || 0);
+                        const amount = Number(action.amount || 0);
+                        const isSet = action.meta && action.meta.mode === 'set';
+                        const nextScore = isSet ? Math.max(0, amount) : Math.max(0, prev + amount);
+                        const delta = isSet ? (nextScore - prev) : amount;
+                        recordStagedField(teamKey, nextScore, action.label || `${teamName} Score`, { ...action.meta, mode: isSet ? 'set' : 'adjust', delta });
+                        break;
+                    }
+                    case 'graphic':
+                        handleGraphicAction(action.payload || {}, action.meta || {});
+                        break;
+                    case 'possession':
+                        handlePossessionAction(action.value, action.meta || {});
+                        break;
+                    case 'event':
+                        recordStagedEvent(action.type || 'event', action.text || '', action.data || {}, action.collection || 'public', action.meta || {});
+                        break;
+                    default:
+                        console.warn('Unknown action kind', action);
+                }
+                refreshUI();
+            },
+            stageActions(actions = []){
+                actions.forEach((a) => this.stageAction(a));
+            }
         };
 
-        window.stagePossessionAction = function(value){
-            const next = (value === 'teamA' || value === 'teamB') ? value : 'none';
-            stageFieldChange('possession', next, 'Possession');
-            const possText = next === 'teamA' ? CP.localState.teamAName : next === 'teamB' ? CP.localState.teamBName : 'None';
-            addStagedEvent('possession', `Possession: ${possText}`, { team: next, stagedField: true }, 'public');
+        window.stageFieldChange = function(key, newValue, humanLabel, meta = {}){
+            ActionPipeline.stageAction({ kind: 'field', key, value: newValue, label: humanLabel, meta });
+        };
+
+        window.stageScoreUpdate = function(team, points, label){
+            ActionPipeline.stageAction({ kind: 'score', targetTeam: team, amount: points, label, meta: { source: (label ? 'manual' : 'macro') } });
+        };
+
+        window.stageGraphicAction = function(payload = {}, meta = {}){
+            ActionPipeline.stageAction({ kind: 'graphic', payload, meta });
+        };
+
+        window.stagePossessionAction = function(value, meta = {}){
+            ActionPipeline.stageAction({ kind: 'possession', value, meta });
         };
 
         window.renderStagedFieldsUI = function(){
